@@ -1,0 +1,41 @@
+{
+  "__type__": "cc.Material",
+  "_name": "",
+  "_objFlags": 0,
+  "__editorExtras__": {},
+  "_native": "",
+  "_effectAsset": {
+    "__uuid__": "6934646d-42df-48cb-8115-18af53c3d205",
+    "__expectedType__": "cc.EffectAsset"
+  },
+  "_techIdx": 0,
+  "_defines": [
+    {
+      "USE_DISC": true
+    }
+  ],
+  "_states": [],
+  "_props": [
+    {
+      "bodyColor": {
+        "__type__": "cc.Color",
+        "r": 40,
+        "g": 58,
+        "b": 72,
+        "a": 150
+      },
+      "rimColor": {
+        "__type__": "cc.Color",
+        "r": 150,
+        "g": 175,
+        "b": 195,
+        "a": 170
+      },
+      "rimPower": 3,
+      "specularPower": 140,
+      "specularStrength": 2.2,
+      "streakStrength": 0.2,
+      "edgeNoise": 0.35
+    }
+  ]
+}

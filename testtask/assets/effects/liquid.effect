@@ -1,0 +1,126 @@
+CCEffect %{
+  techniques:
+  - name: transparent
+    passes:
+    - vert: liquid-vs:vert
+      frag: liquid-fs:frag
+      depthStencilState:
+        depthTest: true
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendSrcAlpha: one
+          blendDstAlpha: one_minus_src_alpha
+      properties:
+        bodyColor:        { value: [0.2, 0.53, 0.92, 0.72], editor: { type: color } }
+        rimColor:         { value: [0.84, 0.94, 1.0, 0.94], editor: { type: color } }
+        rimPower:         { value: 2.0, target: shading.x }
+        specularPower:    { value: 80.0, target: shading.y }
+        specularStrength: { value: 1.4, target: shading.z }
+        streakStrength:   { value: 0.35, target: shading.w }
+        streakDensity:    { value: 3.0, target: surface.x }
+        streakTwist:      { value: 2.0, target: surface.y }
+        edgeNoise:        { value: 0.3, target: surface.z }
+        shimmerSpeed:     { value: 2.0, target: surface.w }
+}%
+
+CCProgram liquid-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #include <builtin/uniforms/cc-local>
+
+  in vec3 a_position;
+  in vec3 a_normal;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+
+  out vec3 v_worldPos;
+  out vec3 v_normal;
+  out vec2 v_uv;
+  out vec4 v_color;
+
+  vec4 vert () {
+    vec4 worldPos = cc_matWorld * vec4(a_position, 1.0);
+    v_worldPos = worldPos.xyz;
+    v_normal = normalize((cc_matWorldIT * vec4(a_normal, 0.0)).xyz);
+    v_uv = a_texCoord;
+    v_color = a_color;
+    return cc_matProj * (cc_matView * worldPos);
+  }
+}%
+
+CCProgram liquid-fs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/output-standard>
+
+  in vec3 v_worldPos;
+  in vec3 v_normal;
+  in vec2 v_uv;
+  in vec4 v_color;
+
+  uniform LiquidSurface {
+    vec4 bodyColor;
+    vec4 rimColor;
+    vec4 shading;
+    vec4 surface;
+  };
+
+  float hash (vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  float valueNoise (vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  vec4 frag () {
+    vec3 N = normalize(v_normal);
+    vec3 V = normalize(cc_cameraPos.xyz - v_worldPos);
+    float coverage = v_color.a;
+    float streak = 0.0;
+
+    #if USE_DISC
+      vec2 disc = v_uv * 2.0 - 1.0;
+      float dist = length(disc);
+      #if USE_SPHERE_NORMAL
+        vec3 right = vec3(cc_matView[0][0], cc_matView[1][0], cc_matView[2][0]);
+        vec3 up = vec3(cc_matView[0][1], cc_matView[1][1], cc_matView[2][1]);
+        N = normalize(right * disc.x + up * disc.y + N * sqrt(max(1.0 - dist * dist, 0.0)));
+      #else
+        dist += (valueNoise(v_worldPos.xz * 2.5) - 0.5) * surface.z;
+        streak = valueNoise(v_worldPos.xz * 6.0 + cc_time.x * surface.w * 0.2) * 0.5;
+      #endif
+      if (dist > 1.0) discard;
+      coverage *= smoothstep(1.0, 0.7, dist);
+    #else
+      float twist = v_uv.x * 6.28318 * surface.x + v_uv.y * surface.y;
+      streak = 0.5 + 0.5 * sin(twist + valueNoise(vec2(v_uv.y * 1.7, cc_time.x * surface.w)) * 4.0);
+    #endif
+
+    float rim = pow(1.0 - clamp(abs(dot(N, V)), 0.0, 1.0), shading.x);
+    vec3 L = normalize(-cc_mainLitDir.xyz);
+    vec3 H = normalize(L + V);
+    float specular = pow(max(dot(N, H), 0.0), shading.y) * shading.z;
+    float diffuse = 0.55 + 0.45 * max(dot(N, L), 0.0);
+
+    vec3 body = SRGBToLinear(bodyColor.rgb) * diffuse;
+    vec3 edge = SRGBToLinear(rimColor.rgb);
+    float highlight = clamp(rim + streak * shading.w, 0.0, 1.0);
+    vec3 color = mix(body, edge, highlight) + vec3(specular);
+    color *= SRGBToLinear(v_color.rgb);
+
+    float alpha = mix(bodyColor.a, rimColor.a, highlight) + specular * 0.5;
+    return CCFragOutput(vec4(color, clamp(alpha, 0.0, 1.0) * coverage));
+  }
+}%
